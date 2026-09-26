@@ -41,6 +41,11 @@ with open(css_path, "r", encoding="utf-8") as f:
 if "personas" not in st.session_state:
     st.session_state.personas = []
 
+if "selected_persona" not in st.session_state:
+    st.session_state.selected_persona = None
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
 
 # --------------------------------
 # SIDEBAR
@@ -67,7 +72,6 @@ with st.sidebar:
 
     st.button("➕ New Research", use_container_width=True)
     st.button("👥 Personas", use_container_width=True)
-    st.button("🎤 Interviews", use_container_width=True)
     st.button("📋 Surveys", use_container_width=True)
     st.button("💡 Insights", use_container_width=True)
     st.button("📄 Reports", use_container_width=True)
@@ -288,29 +292,30 @@ if generate:
         result = generate_personas(product)
 
     st.session_state.personas = result.personas
+    st.session_state.product_name = product.product_name
+    st.session_state.research_objective = product.research_objective
 
     st.success("5 synthetic personas generated successfully!")
 
 
 # --------------------------------
-# PERSONAS
+# PERSONA DASHBOARD
 # --------------------------------
 
 if st.session_state.personas:
 
     st.divider()
 
-    st.markdown(
+    st.html(
         """
         <div class="section-title">
             👥 Synthetic Personas
         </div>
 
         <div class="section-subtitle">
-            AI-generated users based on your research context.
+            Explore the AI-generated users created for this research experiment.
         </div>
-        """,
-        unsafe_allow_html=True
+        """
     )
 
     personas = st.session_state.personas
@@ -328,12 +333,13 @@ if st.session_state.personas:
 
                 traits = ", ".join(persona.personality_traits[:3])
                 goals = ", ".join(persona.goals[:2])
+                motivations = ", ".join(persona.motivations[:2])
 
-                st.markdown(
+                st.html(
                     f"""
                     <div class="persona-card">
 
-                        <div style="font-size:32px; margin-bottom:10px;">
+                        <div style="font-size:36px;">
                             👤
                         </div>
 
@@ -365,6 +371,14 @@ if st.session_state.personas:
                         </div>
 
                         <div class="persona-label">
+                            Motivation
+                        </div>
+
+                        <div class="persona-value">
+                            {html.escape(motivations)}
+                        </div>
+
+                        <div class="persona-label">
                             Product Interest
                         </div>
 
@@ -373,6 +387,279 @@ if st.session_state.personas:
                         </div>
 
                     </div>
-                    """,
-                    unsafe_allow_html=True
+                    """
                 )
+
+                if st.button(
+                    f"🎤 Interview with {persona.name}",
+                    key=f"interview_{row_start}_{persona.name}",
+                    use_container_width=True
+                ):
+                    st.session_state.selected_persona = persona
+                    st.session_state.chat_messages = []
+                    st.rerun()
+# --------------------------------
+# INTERVIEW MODE
+# --------------------------------
+
+if st.session_state.selected_persona:
+
+    persona = st.session_state.selected_persona
+
+    st.divider()
+
+    st.html(
+        f"""
+        <div class="hero">
+            <div class="hero-badge">
+                🎤 Interview Mode
+            </div>
+
+            <div class="hero-title">
+                Interview with {html.escape(persona.name)}
+            </div>
+
+            <div class="hero-subtitle">
+                {persona.age} years •
+                {html.escape(persona.occupation)} •
+                {html.escape(persona.location)}
+            </div>
+        </div>
+        """
+    )
+
+    if st.button("← Back to Personas"):
+        st.session_state.selected_persona = None
+        st.session_state.chat_messages = []
+        st.rerun()
+
+    st.markdown("### Conversation")
+
+    for message in st.session_state.chat_messages:
+
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+    user_message = st.chat_input(
+        f"Ask {persona.name} a question..."
+    )
+
+    if user_message:
+
+        st.session_state.chat_messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+        with st.chat_message("user"):
+            st.write(user_message)
+
+        from backend.agents.interview_agent import interview_persona
+
+        with st.chat_message("assistant"):
+
+            with st.spinner("Persona is thinking..."):
+
+                response = interview_persona(
+                    persona,
+                    st.session_state.chat_messages[:-1],
+                    user_message
+                )
+
+            st.write(response)
+
+        st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": response
+        })
+# --------------------------------
+# SURVEY MODE
+# --------------------------------
+
+st.divider()
+
+st.html(
+    """
+    <div class="section-title">
+        📋 Survey Mode
+    </div>
+
+    <div class="section-subtitle">
+        Ask the same research question to all generated personas.
+    </div>
+    """
+)
+
+if st.session_state.personas:
+
+    survey_question = st.text_area(
+        "Survey Question",
+        placeholder="Example: What would motivate you to use this product regularly?",
+        height=100,
+        key="survey_question"
+    )
+
+    if st.button(
+        "📋 Run Survey",
+        use_container_width=True
+    ):
+
+        if not survey_question.strip():
+
+            st.warning("Please enter a survey question.")
+
+        else:
+
+            from backend.agents.survey_agent import survey_persona
+
+            survey_results = []
+
+            with st.spinner("Collecting responses from all personas..."):
+
+                for persona in st.session_state.personas:
+
+                    answer = survey_persona(
+                        persona,
+                        survey_question
+                    )
+
+                    survey_results.append({
+                        "persona": persona,
+                        "answer": answer
+                    })
+
+            st.session_state.survey_results = survey_results
+
+            st.success("Survey completed successfully!")
+
+
+    # --------------------------------
+    # SURVEY RESULTS
+    # --------------------------------
+
+    if "survey_results" in st.session_state:
+
+        if st.session_state.survey_results:
+
+            st.markdown("### Survey Responses")
+
+            for result in st.session_state.survey_results:
+
+                persona = result["persona"]
+
+                st.html(
+                    f"""
+                    <div class="persona-card">
+
+                        <div class="persona-name">
+                            👤 {html.escape(persona.name)}
+                        </div>
+
+                        <div class="persona-meta">
+                            {persona.age} years •
+                            {html.escape(persona.occupation)}
+                        </div>
+
+                        <div class="persona-label">
+                            Response
+                        </div>
+
+                        <div class="persona-value">
+                            {html.escape(result["answer"])}
+                        </div>
+
+                    </div>
+                    """
+                )
+
+else:
+
+    st.info(
+        "Generate synthetic personas first to use Survey Mode."
+    )
+
+# --------------------------------
+# INSIGHTS
+# --------------------------------
+
+st.divider()
+
+st.html(
+    """
+    <div class="section-title">
+        💡 Research Insights
+    </div>
+
+    <div class="section-subtitle">
+        Extract meaningful patterns from synthetic user responses.
+    </div>
+    """
+)
+
+if "survey_results" in st.session_state and st.session_state.survey_results:
+
+    if st.button(
+        "✨ Extract Research Insights",
+        use_container_width=True
+    ):
+
+        from backend.agents.insight_agent import extract_insights
+
+        with st.spinner("Analyzing survey responses..."):
+
+            insights = extract_insights(
+                st.session_state.product_name,
+                st.session_state.research_objective,
+                st.session_state.survey_results
+            )
+
+        st.session_state.insights = insights
+
+    if "insights" in st.session_state and st.session_state.insights:
+
+        st.markdown("### Research Findings")
+
+        st.markdown(st.session_state.insights)
+
+else:
+
+    st.info(
+        "Run a survey first to generate research insights."
+    )
+
+# --------------------------------
+# PDF REPORT
+# --------------------------------
+
+if "insights" in st.session_state and st.session_state.insights:
+
+    st.divider()
+
+    st.html(
+        """
+        <div class="section-title">
+            📄 Research Report
+        </div>
+
+        <div class="section-subtitle">
+            Download the complete synthetic user research report.
+        </div>
+        """
+    )
+
+    from backend.services.report_service import create_research_report
+
+    pdf_data = create_research_report(
+        st.session_state.product_name,
+        st.session_state.research_objective,
+        st.session_state.survey_results,
+        st.session_state.insights
+    )
+
+    st.download_button(
+        label="📄 Download Research Report",
+        data=pdf_data,
+        file_name="synthetic_user_research_report.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )

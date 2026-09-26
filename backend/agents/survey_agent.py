@@ -2,19 +2,13 @@ from backend.llm import llm
 from backend.models.persona import Persona
 
 
-def interview_persona(
+def survey_persona(
     persona: Persona,
-    conversation: list[dict],
-    user_message: str
+    question: str
 ) -> str:
 
-    history = ""
-
-    for message in conversation:
-        history += f"{message['role']}: {message['content']}\n"
-
     prompt = f"""
-You are roleplaying as a synthetic user for product research.
+You are a synthetic user participating in a product research survey.
 
 PERSONA:
 Name: {persona.name}
@@ -52,18 +46,15 @@ Product Interest:
 Willingness to Pay:
 {persona.willingness_to_pay}
 
-CONVERSATION HISTORY:
-{history}
-
-USER'S NEW QUESTION:
-{user_message}
+SURVEY QUESTION:
+{question}
 
 Instructions:
-- Respond as this persona, not as an AI assistant.
-- Stay consistent with the persona.
-- Do not invent information outside the persona context.
-- Give natural, realistic answers.
-- Keep responses conversational and reasonably concise.
+- Answer only from the perspective of this persona.
+- Keep the answer consistent with the persona.
+- Do not answer as an AI assistant.
+- Give a natural and realistic response.
+- Do not invent information that is not supported by the persona.
 """
 
     response = llm.invoke(prompt)
