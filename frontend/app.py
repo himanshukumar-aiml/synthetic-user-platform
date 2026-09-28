@@ -8,6 +8,13 @@ import streamlit as st
 
 from backend.agents.persona_agent import generate_personas
 from backend.models.persona import ProductContext
+from database.database import (
+    create_experiment,
+    create_persona,
+    save_survey_response,
+    save_interview_message,
+    save_insight
+)
 
 
 # --------------------------------
@@ -294,6 +301,25 @@ if generate:
     st.session_state.personas = result.personas
     st.session_state.product_name = product.product_name
     st.session_state.research_objective = product.research_objective
+    experiment_id = create_experiment(
+    product_name=product.product_name,
+    product_description=product.product_description,
+    features=product.features,
+    target_market=product.target_market,
+    research_objective=product.research_objective
+)
+
+    st.session_state.experiment_id = experiment_id
+    persona_ids = []
+
+    for persona in result.personas:
+        persona_id = create_persona(
+            experiment_id=experiment_id,
+            persona=persona
+        )
+        persona_ids.append(persona_id)
+
+    st.session_state.persona_ids = persona_ids
 
     st.success("5 synthetic personas generated successfully!")
 
@@ -450,6 +476,16 @@ if st.session_state.selected_persona:
             "role": "user",
             "content": user_message
         })
+        persona_index = st.session_state.personas.index(persona)
+
+        persona_id = st.session_state.persona_ids[persona_index]
+
+        save_interview_message(
+            experiment_id=st.session_state.experiment_id,
+            persona_id=persona_id,
+            role="user",
+            message=user_message
+)
 
         with st.chat_message("user"):
             st.write(user_message)
@@ -472,6 +508,12 @@ if st.session_state.selected_persona:
             "role": "assistant",
             "content": response
         })
+        save_interview_message(
+            experiment_id=st.session_state.experiment_id,
+            persona_id=persona_id,
+            role="assistant",
+            message=response
+        )
 # --------------------------------
 # SURVEY MODE
 # --------------------------------
@@ -522,6 +564,16 @@ if st.session_state.personas:
                         persona,
                         survey_question
                     )
+                    persona_index = st.session_state.personas.index(persona)
+
+                    persona_id = st.session_state.persona_ids[persona_index]
+    
+                    save_survey_response(
+                    experiment_id=st.session_state.experiment_id,
+                    persona_id=persona_id,
+                    question=survey_question,
+                    answer=answer
+)
 
                     survey_results.append({
                         "persona": persona,
@@ -614,6 +666,11 @@ if "survey_results" in st.session_state and st.session_state.survey_results:
             )
 
         st.session_state.insights = insights
+
+        save_insight(
+                experiment_id=st.session_state.experiment_id,
+                content=insights
+)
 
     if "insights" in st.session_state and st.session_state.insights:
 
