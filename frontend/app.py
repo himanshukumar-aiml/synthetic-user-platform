@@ -13,8 +13,10 @@ from database.database import (
     create_persona,
     save_survey_response,
     save_interview_message,
-    save_insight
+    save_insight,
+    save_product_score
 )
+from backend.agents.scoring_agent import score_persona
 
 
 # --------------------------------
@@ -54,39 +56,9 @@ if "selected_persona" not in st.session_state:
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 
-# --------------------------------
-# SIDEBAR
-# --------------------------------
+if "product_scores" not in st.session_state:
+    st.session_state.product_scores = []
 
-with st.sidebar:
-
-    st.markdown(
-        """
-        <div style="text-align:center; padding:15px 0 25px 0;">
-            <div style="font-size:42px;">🧠</div>
-            <h2 style="margin:5px 0;">Synthetic User Lab</h2>
-            <p style="color:#94a3b8; font-size:13px;">
-                AI-powered user research
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.divider()
-
-    st.markdown("### Research")
-
-    st.button("➕ New Research", use_container_width=True)
-    st.button("👥 Personas", use_container_width=True)
-    st.button("📋 Surveys", use_container_width=True)
-    st.button("💡 Insights", use_container_width=True)
-    st.button("📄 Reports", use_container_width=True)
-
-    st.divider()
-
-    st.caption("Local AI")
-    st.caption("🟢 Ollama • Qwen3:8B")
 
 
 # --------------------------------
@@ -683,7 +655,185 @@ else:
     st.info(
         "Run a survey first to generate research insights."
     )
+# --------------------------------
+# PRODUCT SCORING
+# --------------------------------
 
+st.divider()
+
+st.html(
+    """
+    <div class="section-title">
+        🎯 Would You Use This Product?
+    </div>
+
+    <div class="section-subtitle">
+        Evaluate each synthetic persona's simulated willingness to use the product.
+    </div>
+    """
+)
+
+if st.session_state.personas:
+
+    if st.button(
+        "🎯 Evaluate Product Preference",
+        use_container_width=True
+    ):
+
+        scores = []
+
+        with st.spinner("Evaluating synthetic user preferences..."):
+
+            for persona in st.session_state.personas:
+
+                result = score_persona(
+                    persona=persona,
+                    product_name=st.session_state.product_name,
+                    research_objective=st.session_state.research_objective
+                )
+
+                # Convert score into decision
+                if result.score >= 70:
+                    decision = "Yes"
+                elif result.score >= 40:
+                    decision = "Maybe"
+                else:
+                    decision = "No"
+
+                persona_index = st.session_state.personas.index(persona)
+                persona_id = st.session_state.persona_ids[persona_index]
+
+                # Save score to database
+                save_product_score(
+                    experiment_id=st.session_state.experiment_id,
+                    persona_id=persona_id,
+                    score=result.score,
+                    decision=decision,
+                    reasoning=result.reasoning
+                )
+
+                scores.append({
+                    "persona": persona,
+                    "score": result.score,
+                    "decision": decision,
+                    "reasoning": result.reasoning
+                })
+
+        st.session_state.product_scores = scores
+
+        st.success("Product preference evaluation completed!")
+
+
+# --------------------------------
+# SCORE RESULTS
+# --------------------------------
+
+if st.session_state.product_scores:
+
+    st.markdown("### Persona Preference Results")
+
+    for result in st.session_state.product_scores:
+
+        persona = result["persona"]
+
+        st.html(
+            f"""
+            <div class="persona-card">
+
+                <div class="persona-name">
+                    👤 {html.escape(persona.name)}
+                </div>
+
+                <div class="persona-meta">
+                    {persona.age} years •
+                    {html.escape(persona.occupation)}
+                </div>
+
+                <div class="persona-label">
+                    Synthetic Preference Score
+                </div>
+
+                <div class="persona-value">
+                    <strong>{result["score"]}/100</strong>
+                </div>
+
+                <div class="persona-label">
+                    Decision
+                </div>
+
+                <div class="persona-value">
+                    <strong>{result["decision"]}</strong>
+                </div>
+
+                <div class="persona-label">
+                    Reasoning
+                </div>
+
+                <div class="persona-value">
+                    {html.escape(result["reasoning"])}
+                </div>
+
+            </div>
+            """
+        )
+
+    st.caption(
+        "Note: These scores represent simulated preferences of AI-generated "
+        "personas and are not predictions of real-world customer behavior."
+    )
+# --------------------------------
+# PERSONA SEGMENT SUMMARY
+# --------------------------------
+
+st.markdown("### 📊 Persona Segment Summary")
+
+high_interest = [
+    r for r in st.session_state.product_scores
+    if r["score"] >= 70
+]
+
+moderate_interest = [
+    r for r in st.session_state.product_scores
+    if 40 <= r["score"] < 70
+]
+
+low_interest = [
+    r for r in st.session_state.product_scores
+    if r["score"] < 40
+]
+
+
+def average_score(results):
+    if not results:
+        return 0
+    return round(
+        sum(r["score"] for r in results) / len(results),
+        1
+    )
+
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "High Interest",
+        len(high_interest),
+        f"Avg: {average_score(high_interest)}"
+    )
+
+with col2:
+    st.metric(
+        "Moderate Interest",
+        len(moderate_interest),
+        f"Avg: {average_score(moderate_interest)}"
+    )
+
+with col3:
+    st.metric(
+        "Low Interest",
+        len(low_interest),
+        f"Avg: {average_score(low_interest)}"
+    )
 # --------------------------------
 # PDF REPORT
 # --------------------------------
