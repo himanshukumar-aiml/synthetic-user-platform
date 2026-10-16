@@ -5,7 +5,7 @@ from backend.models.persona import Persona
 
 
 class ProductScore(BaseModel):
-    score: int = Field(ge=0, le=100)
+    score: int = Field(ge=0, le=10)
     reasoning: str
 
 

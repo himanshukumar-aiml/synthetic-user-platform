@@ -266,9 +266,19 @@ if generate:
         research_objective=research_objective
     )
 
-    with st.spinner("Creating diverse synthetic users..."):
+    with st.spinner("Validating input and creating synthetic users..."):
 
-        result = generate_personas(product)
+        try:
+            result = generate_personas(product)
+        except ValueError as error:
+            st.error(f"Input/persona validation failed: {error}")
+            st.stop()
+        except Exception:
+            st.error(
+                "Persona generation failed or returned invalid output. "
+                "Please review your inputs and try again."
+            )
+            st.stop()
 
     st.session_state.personas = result.personas
     st.session_state.product_name = product.product_name
@@ -835,6 +845,99 @@ with col3:
         f"Avg: {average_score(low_interest)}"
     )
 # --------------------------------
+# INSIGHTS & EXPERIMENT DASHBOARD
+# --------------------------------
+
+st.divider()
+st.markdown("## 📊 Insights & Experiment Results Dashboard")
+st.caption(
+    "Dashboard patterns are derived from synthetic AI-generated responses. "
+    "They are exploratory signals, not evidence about real-world customers."
+)
+
+survey_results_for_dashboard = st.session_state.get("survey_results", [])
+product_scores_for_dashboard = st.session_state.get("product_scores", [])
+
+if survey_results_for_dashboard:
+    # Simple keyword-based theme clustering from actual survey response text.
+    theme_keywords = {
+        "Ease of use": ["easy", "simple", "intuitive", "confusing", "complicated", "user-friendly"],
+        "Price and value": ["price", "cost", "expensive", "cheap", "afford", "subscription", "value"],
+        "Features and functionality": ["feature", "function", "tool", "custom", "personal", "option"],
+        "Trust and privacy": ["privacy", "data", "secure", "trust", "safe", "personal information"],
+        "Convenience and time": ["time", "quick", "convenient", "busy", "schedule", "fast"],
+        "Accuracy and reliability": ["accurate", "accuracy", "reliable", "wrong", "error", "correct"]
+    }
+    theme_counts = {theme: 0 for theme in theme_keywords}
+    for row in survey_results_for_dashboard:
+        answer_text = str(row.get("answer", "")).lower()
+        for theme, keywords in theme_keywords.items():
+            if any(keyword in answer_text for keyword in keywords):
+                theme_counts[theme] += 1
+
+    positive_words = ["love", "great", "good", "helpful", "useful", "easy", "excited", "excellent", "benefit", "convenient", "recommend", "interested"]
+    negative_words = ["hate", "bad", "poor", "difficult", "hard", "expensive", "concern", "worry", "worried", "confusing", "frustrat", "not use", "won't", "would not", "unreliable"]
+    sentiment_counts = {"Positive": 0, "Neutral / mixed": 0, "Negative": 0}
+    sentiment_by_persona = []
+
+    for row in survey_results_for_dashboard:
+        answer = str(row.get("answer", ""))
+        lowered = answer.lower()
+        positive_hits = sum(1 for word in positive_words if word in lowered)
+        negative_hits = sum(1 for word in negative_words if word in lowered)
+        if positive_hits > negative_hits:
+            sentiment = "Positive"
+        elif negative_hits > positive_hits:
+            sentiment = "Negative"
+        else:
+            sentiment = "Neutral / mixed"
+        sentiment_counts[sentiment] += 1
+        sentiment_by_persona.append((row.get("persona"), answer, sentiment))
+
+    theme_col, sentiment_col = st.columns(2)
+    with theme_col:
+        st.markdown("### 🧩 Theme Clusters")
+        st.caption("Keyword-based counts: number of responses mentioning each theme; one response can match multiple themes.")
+        nonzero_themes = {key: value for key, value in theme_counts.items() if value > 0}
+        if nonzero_themes:
+            st.bar_chart(nonzero_themes, horizontal=True)
+        else:
+            st.info("No common theme keywords were detected. Review the responses directly.")
+
+    with sentiment_col:
+        st.markdown("### 💬 Sentiment Breakdown")
+        st.caption("Approximate keyword-based classification, not an ML sentiment model.")
+        st.bar_chart(sentiment_counts)
+        st.write("**Sentiment by persona**")
+        for persona, answer, sentiment in sentiment_by_persona:
+            name = getattr(persona, "name", "Persona")
+            st.write(f"- **{name}:** {sentiment}")
+
+    st.markdown("### 🗣️ Key Persona Quotes")
+    st.caption("Short excerpts copied from the generated survey responses.")
+    for persona, answer, sentiment in sentiment_by_persona:
+        name = getattr(persona, "name", "Persona")
+        excerpt = " ".join(str(answer).split())
+        if len(excerpt) > 260:
+            excerpt = excerpt[:257].rsplit(" ", 1)[0] + "..."
+        with st.container(border=True):
+            st.markdown(f"**{name}** · {sentiment}")
+            st.write(f'“{excerpt}”')
+else:
+    st.info("Run a survey to populate theme clusters, sentiment, and persona quotes.")
+
+if product_scores_for_dashboard:
+    st.markdown("### 🎯 Product Validation Scores")
+    score_chart_data = {
+        getattr(result.get("persona"), "name", f"Persona {index + 1}"): result.get("score", 0)
+        for index, result in enumerate(product_scores_for_dashboard)
+    }
+    st.bar_chart(score_chart_data, horizontal=True)
+    st.caption("Scores represent simulated persona preferences only; they do not predict real-world adoption.")
+else:
+    st.info("Run Evaluate Product Preference to display persona validation scores.")
+
+# --------------------------------
 # PDF REPORT
 # --------------------------------
 
@@ -860,7 +963,8 @@ if "insights" in st.session_state and st.session_state.insights:
         st.session_state.product_name,
         st.session_state.research_objective,
         st.session_state.survey_results,
-        st.session_state.insights
+        st.session_state.insights,
+        product_scores=st.session_state.product_scores
     )
 
     st.download_button(
